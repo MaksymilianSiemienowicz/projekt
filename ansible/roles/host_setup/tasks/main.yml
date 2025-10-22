@@ -1,0 +1,37 @@
+- name: Change hostname
+  hostname:
+    name: "{{  hostname  }}"
+
+- name: Add /etc/hosts record
+  lineinfile:
+    line: "{{ansible_default_ipv4.address}} {{ansible_hostname}}.{{freeipa_domain}}"
+    path: "/etc/hosts"
+    state: present
+
+- name: Edit sshd settings
+  lineinfile:
+    regexp: "PasswordAuthentication no"
+    path: "/etc/ssh/sshd_config.d/60-cloudimg-settings.conf"
+    line: "PasswordAuthentication yes"
+    state: present
+
+- name: Restart sshd
+  service:
+    name: "ssh"
+    state: restarted
+
+- name: Add /etc/resolv.conf record
+  lineinfile:
+    regexp: "nameserver .*"
+    line: "nameserver {{  freeipa_server_ip  }}"
+    path: "/etc/resolv.conf"
+    state: present
+
+- name: Install packages
+  apt:
+    name:
+      - freeipa-client
+    state: present
+
+- name: Install freeipa client
+  command: "ipa-client-install --domain={{  freeipa_domain  }} --server={{  freeipa_server_name  }}  --realm={{  freeipa_domain | upper  }} --fixed-primary -p admin -w {{  kerberos_admin_password  }} --mkhomedir  --hostname={{ansible_hostname}}.{{freeipa_domain}} -U"

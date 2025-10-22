@@ -1,0 +1,4 @@
+listeners: "PLAINTEXT://{{  inventory_hostname  }}:9092,CONTROLLER://{{  inventory_hostname  }}:9093"
+advertised_listener: "PLAINTEXT://{{  inventory_hostname  }}:9092,CONTROLLER://{{  inventory_hostname  }}:9093"
+data_dir: "/opt/kafka/current/data"
+cluster_id: "AQ051buARzuXj46ArB3GHw"

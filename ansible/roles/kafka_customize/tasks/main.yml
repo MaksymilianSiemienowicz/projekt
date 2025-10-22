@@ -1,0 +1,86 @@
+---
+- name: Get quorum
+  set_fact:
+    quorum: "{{ groups['hosts'] | map('regex_replace', '$', ':9093') | join(',') }}"
+
+- name: Set quorum
+  lineinfile:
+    path: /opt/kafka/current/config/server.properties
+    regexp: '^controller\.quorum\.bootstrap\.servers='
+    line: "controller.quorum.bootstrap.servers={{  quorum  }}"
+    state: present
+
+- name: Set node id
+  lineinfile:
+    path: /opt/kafka/current/config/server.properties
+    regexp: '^node\.id='
+    line: "node.id={{  id  }}"
+    state: present
+
+- name: Set listeners
+  lineinfile:
+    path: /opt/kafka/current/config/server.properties
+    regexp: '^listeners='
+    line: "listeners={{  listeners  }}"
+    state: present
+
+- name: Set advertised listeners
+  lineinfile:
+    path: /opt/kafka/current/config/server.properties
+    regexp: '^advertised\.listeners='
+    line: "advertised.listener={{  advertised_listener  }}"
+    state: present
+
+- name: Create data directory
+  file:
+    path: "{{  data_dir  }}"
+    state: directory
+    owner: kafka
+    group: kafka
+
+- name: Set log dir
+  lineinfile:
+    path: /opt/kafka/current/config/server.properties
+    regexp: '^log\.dirs='
+    line: "log.dirs={{  data_dir  }}"
+    state: present
+
+- name: Initialize initial_controllers
+  set_fact:
+    initial_controllers: ""
+
+- name: Build initial_controllers by looping over hosts
+  set_fact:
+    initial_controllers: "{{ initial_controllers + (',' if initial_controllers != '' else '') + hostvars[item].id|string + '@' + item + ':9093:' + hostvars[item].uuid }}"
+  loop: "{{ groups['hosts'] }}"
+
+- name: Debug - show generated initial_controllers
+  debug:
+    msg: "{{ initial_controllers }}"
+
+- name: Format kafka
+  command:
+    cmd: "/opt/kafka/current/bin/kafka-storage.sh format --ignore-formatted --config /opt/kafka/current/config/server.properties --cluster-id {{  cluster_id  }} --initial-controllers {{  initial_controllers  }}"
+
+- name: Set ownership and permissions for Kafka directory
+  ansible.builtin.file:
+    path: /opt/kafka/current/data
+    state: directory
+    recurse: yes
+    owner: kafka
+    group: kafka
+
+- name: Deploy Kafka systemd service
+  template:
+    src: kafka.service.j2          # plik z katalogu templates/
+    dest: /etc/systemd/system/kafka.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload and restart kafka
+  systemd:
+    daemon_reload: yes
+    name: kafka
+    state: restarted
+    enabled: yes

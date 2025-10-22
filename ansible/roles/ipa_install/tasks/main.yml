@@ -1,0 +1,26 @@
+- name: Install freeipa packages
+  yum:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - ipa-server
+    - ipa-server-dns
+
+- name: Copy certs
+  copy:
+    src: "./inventory/ipa/ssl/"
+    dest: "/opt/ssl/"
+
+- name: Change hostname
+  hostname:
+    name: "{{  hostname  }}"
+
+- name: Add /etc/hosts record
+  lineinfile:
+    line: "{{ansible_default_ipv4.address}} {{ansible_hostname}}.{{freeipa_domain}}"
+    path: "/etc/hosts"
+    state: present
+
+- name: Install freeipa
+  shell:
+    cmd: "ipa-server-install --setup-dns --no-forwarders --auto-reverse -r {{ freeipa_domain | upper }} -n {{ freeipa_domain }} -p {{ directory_admin_password }}  -U -a {{ kerberos_admin_password }} --ip-address {{ansible_default_ipv4.address}} --dirsrv-cert-file /opt/ssl/server.p12 --dirsrv-pin {{ssl_cert_pass}} --http-cert-file /opt/ssl/server.p12 --http-pin {{ssl_cert_pass}} --root-ca-file /opt/ssl/ca.crt --no-pkinit --hostname={{ansible_hostname}}.{{freeipa_domain}}"

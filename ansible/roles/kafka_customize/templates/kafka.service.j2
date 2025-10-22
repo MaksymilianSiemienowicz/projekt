@@ -1,0 +1,14 @@
+[Unit]
+Description=Apache Kafka Server
+
+[Service]
+Type=simple
+User=kafka
+Group=kafka
+ExecStart=/opt/kafka/current/bin/kafka-server-start.sh /opt/kafka/current/config/server.properties
+ExecStop=/opt/kafka/current/bin/kafka-server-stop.sh
+Restart=on-failure
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target

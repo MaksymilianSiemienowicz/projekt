@@ -5,3 +5,7 @@ terraform/.terraform.lock.hcl
 terraform/.terraform
 terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
+ansible/ansibleVenv/
+ansivle/inventory/host_setup/secret.yml
+ansible/inventory/ipa/secret.yml
+ansible/inventory/ipa/ssl/

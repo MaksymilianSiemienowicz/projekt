@@ -1,0 +1,4 @@
+hostname: "flinkvm2.projekt.home"
+freeipa_domain: "projekt.home"
+freeipa_server_name: "ipavm.projekt.home"
+freeipa_server_ip: "192.168.0.4"

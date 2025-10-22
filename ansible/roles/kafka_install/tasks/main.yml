@@ -1,0 +1,60 @@
+---
+- name: Add group 
+  group:
+    name: kafka
+    state: present
+
+- name: Add user
+  user:
+    name: kafka
+    group: kafka
+    shell: /bin/bash
+    create_home: yes
+    state: present
+
+- name: Create directory
+  file:
+    path: /opt/kafka
+    state: directory
+    owner: kafka
+    group: kafka
+
+
+- name: Get filename
+  set_fact:
+     kafka_filename: "{{ download_url | basename }}"  
+
+- name: Download kafka
+  get_url:
+    url: "{{  download_url  }}"
+    dest: "/opt/kafka/{{  kafka_filename  }}"
+
+
+- name: Get version & name without tgz
+  set_fact:
+    kafka_version: "{{ (kafka_filename | regex_search('kafka_\\d+\\.\\d+-(\\d+\\.\\d+\\.\\d+)', '\\1'))[0] }}"
+    kafka_no_tgz: "{{ kafka_filename | regex_replace('\\.tgz$', '') }}"
+
+- name: Extract files
+  unarchive:
+    src: "/opt/kafka/{{  kafka_filename }}"
+    dest: "/opt/kafka/"
+    remote_src: yes
+    owner: kafka
+    group: kafka
+
+- name: Rename
+  command:
+    cmd: "mv /opt/kafka/{{  kafka_no_tgz  }} /opt/kafka/{{  kafka_version  }}"
+- name: Create symlink
+  file:
+    src: "/opt/kafka/{{  kafka_version  }}"
+    dest: "/opt/kafka/current"
+    state: link
+    owner: kafka
+    group: kafka
+
+- name: Delete source file
+  file:
+    path: "/opt/kafka/{{  kafka_filename  }}"
+    state: absent
