@@ -1,0 +1,10 @@
+services:
+  entra:
+    image: entra
+    container_name: entra
+    ports:
+      - "8002:8000"
+    environment:
+      MONGO_URI: "mongodb://192.168.0.220:27017"
+      MONGO_DB: "mydb"
+      KAFKA_BOOTSTRAP: "kafka1.projekt.home:9092"

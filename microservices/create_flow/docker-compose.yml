@@ -1,0 +1,10 @@
+services:
+  create-flow1:
+    image: create-flow1
+    container_name: create-flow1
+    ports:
+      - "8001:8000"
+    environment:
+      KAFKA_SERVERS: "kafka1.projekt.home"
+      MONGO_URL: "mongodb://192.168.0.220:27017"
+

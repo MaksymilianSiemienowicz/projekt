@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-lb
+  namespace: mongodb
+spec:
+  type: LoadBalancer
+  selector:
+    app: mongodb-svc
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: 27017
+      protocol: TCP

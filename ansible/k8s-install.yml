@@ -1,0 +1,49 @@
+- name: Deploy SSH keys to all hosts
+  hosts: all
+  gather_facts: false
+  roles:
+    - ssh-setup
+
+- name: Install Kubernetes master node
+  hosts: master
+  connection: local
+  roles:
+    - master-install
+
+- name: Disable CRI-O shortname mode on master
+  hosts: master
+  connection: local
+  become: yes
+  roles:
+    - crio-shortname-disable
+
+- name: Install Kubernetes worker nodes
+  hosts: workers
+  remote_user: "{{ ansible_ssh_user | default('service') }}"
+  roles:
+    - worker-install
+
+- name: Disable CRI-O shortname mode on workers
+  hosts: workers
+  remote_user: "{{ ansible_ssh_user | default('service') }}"
+  become: yes
+  roles:
+    - crio-shortname-disable
+
+- name: Install local-path-provisioner for persistent storage
+  hosts: master
+  connection: local
+  roles:
+    - local-path-provisioner-install
+
+- name: Install MetalLB load balancer
+  hosts: master
+  connection: local
+  roles:
+    - metallb-install
+
+- name: Install MongoDB with LoadBalancer
+  hosts: master
+  connection: local
+  roles:
+    - mongodb-install

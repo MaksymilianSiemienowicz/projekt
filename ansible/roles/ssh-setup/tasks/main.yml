@@ -1,0 +1,23 @@
+- name: Check if local SSH key exists
+  stat:
+    path: "{{ ssh_private_key_path }}"
+  register: local_ssh_key
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate SSH key pair if missing
+  community.crypto.openssh_keypair:
+    path: "{{ ssh_private_key_path }}"
+    type: rsa
+    size: 2048
+    state: present
+  when: not local_ssh_key.stat.exists
+  delegate_to: localhost
+  run_once: true
+
+- name: Deploy SSH public key to remote hosts
+  ansible.posix.authorized_key:
+    user: "{{ ansible_ssh_user }}"
+    state: present
+    key: "{{ lookup('file', ssh_public_key_path) }}"
+    exclusive: true

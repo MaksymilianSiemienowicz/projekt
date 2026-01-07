@@ -1,0 +1,40 @@
+- name: Create metallb-system namespace
+  kubernetes.core.k8s:
+    kind: Namespace
+    name: metallb-system
+    state: present
+
+- name: Add MetalLB Helm repository
+  kubernetes.core.helm_repository:
+    name: metallb
+    repo_url: https://metallb.github.io/metallb
+
+- name: Install MetalLB using Helm
+  kubernetes.core.helm:
+    name: metallb
+    chart_ref: metallb/metallb
+    release_namespace: metallb-system
+    create_namespace: true
+    wait: true
+
+- name: Wait for MetalLB controller to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    name: metallb-controller
+    namespace: metallb-system
+    wait: yes
+    wait_condition:
+      type: Available
+      status: "True"
+
+- name: Wait for MetalLB speaker DaemonSet to be ready
+  kubernetes.core.k8s_info:
+    kind: DaemonSet
+    name: metallb-speaker
+    namespace: metallb-system
+    wait: yes
+
+- name: Create IPAddressPool and L2Advertisement
+  kubernetes.core.k8s:
+    state: present
+    template: metallb-config.yaml

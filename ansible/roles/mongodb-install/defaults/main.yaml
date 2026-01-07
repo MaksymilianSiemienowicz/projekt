@@ -1,0 +1,1 @@
+mongodb_admin_password: "{{ lookup('env', 'MONGODB_PASS') | default('admin', true) }}"

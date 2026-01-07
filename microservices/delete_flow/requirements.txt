@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+motor
+pydantic
+confluent-kafka
+clickhouse-connect

@@ -1,0 +1,168 @@
+- name: swap_OFF
+  lineinfile:
+    path: /etc/fstab
+    regex: '^\s*UUID=.*swap'
+    line: '#\g<0>'
+    backrefs: yes
+  become: true
+
+- name: swap_OFF_now
+  command: swapoff -a
+  become: true
+  become: true
+
+- name: br_netfilter_ON
+  modprobe:
+    name: br_netfilter
+    state: present
+    persistent: present
+  become: true
+
+- name: bridge_ON
+  modprobe:
+    name: bridge
+    state: present
+  become: true
+
+- name: ip_port_forwarding_ON
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: 1
+    state: present
+    reload: yes
+  become: true
+
+- name: bridge-nf-call-iptables_ON
+  sysctl:
+    name: net.bridge.bridge-nf-call-iptables
+    value: 1
+    state: present
+    reload: yes
+  become: true
+
+- name: restart
+  reboot:
+    reboot_timeout: 60
+    test_command: whoami
+  become: true
+
+- name: update_packages
+  apt:
+    update_cache: yes
+  become: true
+
+- name: install_packages
+  apt:
+    name:
+      - software-properties-common
+      - curl
+      - apt-transport-https
+      - ca-certificates
+      - gpg
+    state: present
+  become: true
+
+- name: add_kubernetes_key
+  apt_key:
+    url: "https://pkgs.k8s.io/core:/stable:/{{ KUBERNETES_VERSION }}/deb/Release.key"
+    keyring: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  become: true
+
+- name: add_crio_key
+  apt_key:
+    url: "https://download.opensuse.org/repositories/isv:/cri-o:/stable:/{{ CRIO_VERSION }}/deb/Release.key"
+    keyring: /etc/apt/keyrings/cri-o-apt-keyring.gpg
+  become: true
+
+- name: add_kubernetes_repo
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/{{ KUBERNETES_VERSION }}/deb/ /"
+    state: present
+    filename: kubernetes
+  become: true
+
+- name: add_crio_repo
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://download.opensuse.org/repositories/isv:/cri-o:/stable:/{{ CRIO_VERSION }}/deb/ /"
+    state: present
+    filename: cri-o
+  become: true
+
+- name: update_packages
+  apt:
+    update_cache: yes
+  become: true
+
+- name: install_kubernetes_components
+  apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+      - cri-o
+  become: true
+
+- name: hold_kubeadm
+  ansible.builtin.dpkg_selections:
+    name: kubeadm
+    selection: hold
+  become: true
+
+- name: hold_kubelet
+  ansible.builtin.dpkg_selections:
+    name: kubelet
+    selection: hold
+  become: true
+
+- name: hold_kubectl
+  ansible.builtin.dpkg_selections:
+    name: kubectl
+    selection: hold
+  become: true
+
+- name: start_crio_service
+  systemd:
+    name: crio
+    state: started
+    enabled: yes
+  become: true
+
+- name: cri-o
+  ansible.builtin.dpkg_selections:
+    name: cri-o
+    selection: hold
+  become: true
+
+- name: Fetch kubeconfig to controller
+  fetch:
+    src: /etc/kubernetes/admin.conf
+    dest: /tmp/admin.conf
+    flat: yes
+  delegate_to: master
+  become: true
+  run_once: true
+
+- name: create_.kube_folder
+  file:
+    path: "/root/.kube"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Copy kubeconfig to worker
+  copy:
+    src: /tmp/admin.conf
+    dest: /root/.kube/config
+    mode: '0600'
+  become: true
+
+- name: Get join command using kubectl
+  command: kubeadm token create --print-join-command
+  register: join_command
+  environment:
+    KUBECONFIG: /root/.kube/config
+  become: true
+
+    #- name: Join worker to cluster
+    #command: "{{ join_command.stdout }}"
+    #become: true

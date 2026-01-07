@@ -1,0 +1,40 @@
+- name: Download local-path-provisioner manifest
+  ansible.builtin.get_url:
+    url: https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+    dest: /tmp/local-path-storage.yaml
+    mode: '0644'
+
+- name: Apply local-path-provisioner manifest
+  kubernetes.core.k8s:
+    state: present
+    src: /tmp/local-path-storage.yaml
+
+- name: Wait for local-path-provisioner deployment to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    name: local-path-provisioner
+    namespace: local-path-storage
+    wait: yes
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 300
+
+- name: Set local-path as default storage class
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: local-path
+        annotations:
+          storageclass.kubernetes.io/is-default-class: "true"
+      provisioner: rancher.io/local-path
+      volumeBindingMode: WaitForFirstConsumer
+      reclaimPolicy: Delete
+
+- name: Clean up temporary manifest file
+  ansible.builtin.file:
+    path: /tmp/local-path-storage.yaml
+    state: absent

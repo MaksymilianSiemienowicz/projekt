@@ -1,0 +1,68 @@
+- name: Add MongoDB Helm repo
+  kubernetes.core.helm_repository:
+    name: mongodb
+    repo_url: https://mongodb.github.io/helm-charts
+    state: present
+
+- name: Create mongodb namespace
+  kubernetes.core.k8s:
+    kind: Namespace
+    name: mongodb
+    state: present
+
+- name: Install MongoDB Community Operator
+  kubernetes.core.helm:
+    name: community-operator
+    chart_ref: mongodb/community-operator
+    release_namespace: mongodb
+    chart_version: "0.10.0"
+    create_namespace: true
+    wait: true
+    wait_timeout: 5m
+
+- name: Wait for MongoDB operator to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    name: mongodb-kubernetes-operator
+    namespace: mongodb
+    wait: yes
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 600
+
+- name: Create MongoDB instance from template
+  kubernetes.core.k8s:
+    state: present
+    template: mongodb-instance.yaml
+    namespace: mongodb
+
+- name: Wait for MongoDB to be ready
+  kubernetes.core.k8s_info:
+    api_version: mongodbcommunity.mongodb.com/v1
+    kind: MongoDBCommunity
+    name: mongodb
+    namespace: mongodb
+  register: mongodb_status
+  until: mongodb_status.resources[0].status.phase == "Running"
+  retries: 60
+  delay: 10
+
+- name: Create MongoDB LoadBalancer service
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/templates/mongodb-loadbalancer.yaml"
+
+- name: Wait for LoadBalancer to get external IP
+  kubernetes.core.k8s_info:
+    kind: Service
+    name: mongodb-lb
+    namespace: mongodb
+  register: mongodb_lb_service
+  until: mongodb_lb_service.resources[0].status.loadBalancer.ingress is defined
+  retries: 30
+  delay: 10
+
+- name: Display MongoDB LoadBalancer IP
+  ansible.builtin.debug:
+    msg: "MongoDB is accessible at: {{ mongodb_lb_service.resources[0].status.loadBalancer.ingress[0].ip }}:27017"

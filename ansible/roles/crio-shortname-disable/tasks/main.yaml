@@ -1,0 +1,41 @@
+- name: Get CRI-O version
+  ansible.builtin.command:
+    cmd: crio --version
+  register: crio_version
+  ignore_errors: yes
+  changed_when: false
+
+- name: Configure CRI-O shortname mode
+  when: crio_version.rc == 0
+  block:
+    - name: Create CRI-O config directory
+      ansible.builtin.file:
+        path: /etc/crio/crio.conf.d
+        state: directory
+        mode: '0755'
+
+    - name: Configure short_name_mode to disabled
+      ansible.builtin.copy:
+        dest: /etc/crio/crio.conf.d/30-shortnames.conf
+        content: |
+          [crio.image]
+          short_name_mode = "disabled"
+        mode: '0644'
+      register: crio_config
+
+    - name: Restart CRI-O service
+      ansible.builtin.systemd:
+        name: crio
+        state: restarted
+        daemon_reload: yes
+      when: crio_config.changed
+
+    - name: Wait for CRI-O to be ready
+      ansible.builtin.command:
+        cmd: crictl info
+      register: crictl_check
+      until: crictl_check.rc == 0
+      retries: 10
+      delay: 3
+      changed_when: false
+      when: crio_config.changed

@@ -1,0 +1,221 @@
+- name: swap_OFF
+  lineinfile:
+    path: /etc/fstab
+    regex: '^\s*UUID=.*swap'
+    line: '#\g<0>'
+    backrefs: yes
+  become: true
+
+- name: swap_OFF_now
+  command: swapoff -a
+  become: true
+
+- name: br_netfilter_ON
+  modprobe:
+    name: br_netfilter
+    state: present
+    persistent: present
+  become: true
+
+- name: bridge_ON
+  modprobe:
+    name: bridge
+    state: present
+  become: true
+
+- name: ip_port_forwarding_ON
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: 1
+    state: present
+    reload: yes
+  become: true
+
+- name: bridge-nf-call-iptables_ON
+  sysctl:
+    name: net.bridge.bridge-nf-call-iptables
+    value: 1
+    state: present
+    reload: yes
+  become: true
+
+    #- name: restart
+    #reboot:
+    #reboot_timeout: 60
+    #test_command: whoami
+    #become: true
+
+- name: update_packages
+  apt:
+    update_cache: yes
+  become: true
+
+- name: install_packages
+  apt:
+    name:
+      - software-properties-common
+      - curl
+      - apt-transport-https
+      - ca-certificates
+      - gpg
+    state: present
+  become: true
+
+- name: add_kubernetes_key
+  apt_key:
+    url: "https://pkgs.k8s.io/core:/stable:/{{ KUBERNETES_VERSION }}/deb/Release.key"
+    keyring: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  become: true
+
+- name: add_crio_key
+  apt_key:
+    url: "https://download.opensuse.org/repositories/isv:/cri-o:/stable:/{{ CRIO_VERSION }}/deb/Release.key"
+    keyring: /etc/apt/keyrings/cri-o-apt-keyring.gpg
+  become: true
+
+- name: add_kubernetes_repo
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/{{ KUBERNETES_VERSION }}/deb/ /"
+    state: present
+    filename: kubernetes
+  become: true
+
+- name: add_crio_repo
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://download.opensuse.org/repositories/isv:/cri-o:/stable:/{{ CRIO_VERSION }}/deb/ /"
+    state: present
+    filename: cri-o
+  become: true
+
+- name: update_packages
+  apt:
+    update_cache: yes
+  become: true
+
+- name: install_kubernetes_components
+  apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+      - cri-o
+  become: true
+
+- name: hold_kubeadm
+  ansible.builtin.dpkg_selections:
+    name: kubeadm
+    selection: hold
+  become: true
+
+- name: hold_kubelet
+  ansible.builtin.dpkg_selections:
+    name: kubelet
+    selection: hold
+  become: true
+
+- name: hold_kubectl
+  ansible.builtin.dpkg_selections:
+    name: kubectl
+    selection: hold
+  become: true
+
+- name: start_crio_service
+  systemd:
+    name: crio
+    state: started
+    enabled: yes
+  become: true
+
+- name: cri-o
+  ansible.builtin.dpkg_selections:
+    name: cri-o
+    selection: hold
+  become: true
+
+    #- name: master_node_init
+    #command: kubeadm init --pod-network-cidr={{ POD_CIDR }}
+    #become: true
+
+- name: create_.kube_folder
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    mode: '0755'
+
+- name: copy_kubeconfig
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    remote_src: yes
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0644'
+  become: true
+
+- name: install_helm
+  get_url:
+    url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    dest: /tmp/get_helm.sh
+    mode: '0755'
+
+- name: run_helm_instalation_script
+  command: /tmp/get_helm.sh
+  args:
+      creates: /usr/local/bin/helm
+  register: helm_install_result
+  changed_when: false
+
+- name: Add /usr/local/bin to PATH
+  lineinfile:
+    path: ~/.bashrc
+    line: 'export PATH=$PATH:/usr/local/bin'
+  when: helm_install_result.rc == 0
+
+- name: download_kubernetes_py_packages
+  apt:
+    name:
+      - python3-openshift
+      - python3-yaml
+      - python3-kubernetes
+  become: true
+
+- name: create_flannel_namespace
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: kube-flannel
+    state: present
+  delegate_to: localhost
+  run_once: true
+
+- name: add_label_to_flannel
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: kube-flannel
+    state: present
+    definition:
+      metadata:
+        labels:
+          pod-security.kubernetes.io/enforce: privileged
+  delegate_to: localhost
+  run_once: true
+
+- name: add_flannel_repo
+  kubernetes.core.helm_repository:
+    name: flannel
+    repo_url: https://flannel-io.github.io/flannel/
+    state: present
+  delegate_to: localhost
+  run_once: true
+
+- name: install_flannel
+  kubernetes.core.helm:
+    name: flannel
+    chart_ref: flannel/flannel
+    release_namespace: kube-flannel
+    values:
+      podCidr: "{{ POD_CIDR }}"
+  delegate_to: localhost
+  run_once: true
+
