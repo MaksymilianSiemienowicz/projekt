@@ -2,8 +2,8 @@ import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import clickhouse_connect
-
-CLICKHOUSE_HOST = os.getenv("CLICKHOUSE_HOST", "db2.projekt.home")
+import re
+CLICKHOUSE_HOST = os.getenv("CLICKHOUSE_HOST", "localhost")
 CLICKHOUSE_PORT = int(os.getenv("CLICKHOUSE_PORT", 8123))
 CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "default")
 CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "")
@@ -28,6 +28,10 @@ def drop_user_db(request: DropDBRequest):
     
     db_name = f"ch_{request.user_id}_db"
     
+    CH_OBJECT_ID_RE = re.compile(r"^[a-f0-9]{24}$")
+    if not CH_OBJECT_ID_RE.fullmatch(request.user_id):
+        raise ValueError(f"{request.user_id} - invalid value")
+
     try:
         client = get_clickhouse_client()
         client.command(f"DROP DATABASE IF EXISTS {db_name} ON CLUSTER default")

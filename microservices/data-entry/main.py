@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from motor.motor_asyncio import AsyncIOMotorClient
 from aiokafka import AIOKafkaProducer
 from bson import ObjectId, errors
+import logging
 
 app = FastAPI()
 
@@ -12,20 +13,23 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 db = None
 producer: AIOKafkaProducer | None = None
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 @app.on_event("startup")
 async def startup_event():
     global db, producer
 
     client = AsyncIOMotorClient(MONGO_URI)
     db = client[MONGO_DB]
-    print(f"MongoDB initialized: {MONGO_URI}/{MONGO_DB}")
+    logger.info("MongoDB initialized")
 
     producer = AIOKafkaProducer(
         bootstrap_servers=KAFKA_BOOTSTRAP,
         linger_ms=5,
     )
     await producer.start()
-    print(f"Kafka producer started: {KAFKA_BOOTSTRAP}")
+    logger.info("Kafka producer started: %s", KAFKA_BOOTSTRAP)
 
 
 @app.on_event("shutdown")
@@ -33,7 +37,7 @@ async def shutdown_event():
     global producer
     if producer:
         await producer.stop()
-        print("Kafka producer stopped")
+        logger.info("Kafka producer stopped")
 
 def validate_object_id(id_str: str) -> ObjectId:
     id_str = id_str.strip()

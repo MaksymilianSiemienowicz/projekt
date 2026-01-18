@@ -6,12 +6,14 @@ from bson import ObjectId
 import clickhouse_connect
 import csv
 import io
+import re
+from datetime import datetime
 
 app = FastAPI()
 
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb://admin:admin@192.168.56.200:27017")
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb://admin:admin@localhost:27017")
 MONGO_DB = os.environ.get("MONGO_DB", "SBTG_data")
-CH_HOST = os.environ.get("CLICKHOUSE_HOST", "db2.projekt.home")
+CH_HOST = os.environ.get("CLICKHOUSE_HOST", "localhost")
 CH_USER = os.environ.get("CLICKHOUSE_USER", "default")
 CH_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "")
 CH_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
@@ -52,10 +54,23 @@ def get_flow_data(
             status_code=403,
             detail="Flow does not belong to this user"
         )
+    
+    OBJECT_ID_RE = re.compile(r"^[a-f0-9]{24}$")
+    if not OBJECT_ID_RE.fullmatch(str(user_id)):
+        raise ValueError(f"{user_id} - user_id is invalid")
+
+    if not OBJECT_ID_RE.fullmatch(str(flow_id)):
+        raise ValueError(f"{flow_id} - flow_id is invalid")
+    if start_date or end_date: 
+        try:
+            datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
+            datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Invalid dates were provided")
 
     ch_db = f"ch_{user_id}_db"
     ch_table = f"output_{flow_id}"
-
+    
     where_clauses = []
     if start_date:
         where_clauses.append(f"created_at >= '{start_date}'")

@@ -8,10 +8,15 @@ from pydantic import BaseModel
 from confluent_kafka.admin import AdminClient, NewTopic
 import clickhouse_connect
 import time 
+import re
+import logging
 
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 KAFKA_SERVERS = os.environ.get("KAFKA_SERVERS", "localhost:9092")
 MONGO_DB = os.environ.get("MONGO_DB","mydb")
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 mongo_client = None
 kafka_client = None
@@ -27,24 +32,32 @@ async def create_topic(topic_name: str):
         for topic, f in fs.items():
             try:
                 f.result() 
-                print(f"Topic {topic} utworzony!")
+                logger.info("Topic: %s has been created",topic)
             except Exception as e:
-                print(f"Błąd przy tworzeniu topicu {topic}: {e}")
+                logger.error("Error while creating topic %s: %s",topic, e)
                 return False
 
         return True
 
     except Exception as e:
-        print("Błąd:", e)
+        logger.error("Error: %s", e)
         return False
 
 def create_clickhouse_raw_tables(user_id: str, flow_id: str):
     client = clickhouse_connect.get_client(
         host="db2.projekt.home",
-        port=9000,
+        port=8123,
         username="default",
         password=''
     )
+    
+    OBJECT_ID_RE = re.compile(r"^[a-f0-9]{24}$")
+    if not OBJECT_ID_RE.fullmatch(user_id):
+        raise ValueError(f"{user_id} - user_id is invalid")
+
+    if not OBJECT_ID_RE.fullmatch(flow_id):
+        raise ValueError(f"{flow_id} - flow_id is invalid")
+
     db_name = f"ch_{user_id}_db"
     local_table = f"output_{flow_id}_local"
     mt_table = f"output_{flow_id}_mt"
@@ -56,11 +69,11 @@ def create_clickhouse_raw_tables(user_id: str, flow_id: str):
                "materialized_view": False, "distributed_table": False, "grants": []}
 
     try:
-        print(f"[ClickHouse] Tworzenie bazy: {db_name}")
+        logger.info("[ClickHouse] creating database: %s", db_name)
         client.command(f"CREATE DATABASE IF NOT EXISTS {db_name} ON CLUSTER default")
         results["database"] = True
 
-        print(f"[ClickHouse] Tworzenie local table: {local_table}")
+        logger.info("[ClickHouse] creating local table: %s", local_table)
         client.command(f"""
             CREATE TABLE IF NOT EXISTS {db_name}.{local_table} (
                 message String
@@ -87,8 +100,9 @@ def create_clickhouse_raw_tables(user_id: str, flow_id: str):
         ORDER BY tuple()
         """)
         results["mt_table"] = True
+        params = f"mv_{flow_id}"
 
-        print(f"[ClickHouse] Tworzenie materialized view: mv_{flow_id}")
+        logger.info("[ClickHouse] Creating materialized view: %s", params)
         client.command(f"""
             CREATE MATERIALIZED VIEW IF NOT EXISTS {db_name}.mv_{flow_id}
             TO {db_name}.{mt_table}
@@ -97,7 +111,7 @@ def create_clickhouse_raw_tables(user_id: str, flow_id: str):
         results["materialized_view"] = True
         time.sleep(1)
 
-        print(f"[ClickHouse] Tworzenie distributed table: {distributed_table}")
+        logger.info("[ClickHouse] Creating distributed table: %s", distributed_table)
         client.command(f"""
             CREATE TABLE IF NOT EXISTS {db_name}.{distributed_table} ON CLUSTER default 
             (
@@ -118,16 +132,16 @@ def create_clickhouse_raw_tables(user_id: str, flow_id: str):
         for table in [local_table, mt_table, distributed_table]:
             grant_cmd = f"GRANT SELECT, INSERT ON {db_name}.{table} TO ch_{user_id} ON CLUSTER default"
             try:
-                print(f"[ClickHouse] Grant: {grant_cmd}")
+                logger.info("[ClickHouse] Grant: %s", grant_cmd)
                 client.command(grant_cmd)
                 results["grants"].append({table: "OK"})
             except Exception as e:
-                print(f"[ClickHouse] Błąd przy grant dla {table}: {e}")
+                logger.error("[ClickHouse] Error while executing grant on %s: %s", table, e)
                 results["grants"].append({table: f"FAIL: {e}"})
 
-        print("[ClickHouse] Wszystkie operacje zakończone")
+        logger.info("[ClickHouse] All operations done")
     except Exception as e:
-        print(f"[ClickHouse] Błąd ogólny: {e}")
+        logger.error("[ClickHouse] Main error: ", e)
         results["error"] = str(e)
 
     return results
@@ -156,7 +170,7 @@ async def find_user_by_id(user_id: str):
         return await users.find_one({"_id": oid})
 
     except Exception as e:
-        print("Błąd:", e)
+        logger.error("Error:", e)
         return None
 
 
@@ -170,7 +184,7 @@ async def find_flow_by_id(flow_id: str):
         return await flows.find_one({"_id": oid})
 
     except Exception as e:
-        print("Błąd:", e)
+        logger.error("Error:", e)
         return None
 
 
@@ -185,11 +199,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 @app.post("/flows")
 async def get_user(data: UserRequest):
-    print("REQUEST RECEIVED:", data)
+    logger.info("REQUEST RECEIVED:", data)
     user = await find_user_by_id(data.user_id)
     flow = await find_flow_by_id(data.flow_id)
-    print("FIND USER:", user)
-    print("FIND FLOW:", flow)
+    logger.info("FIND USER: %s", user)
+    logger.info("FIND FLOW: %s", flow)
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -206,7 +220,7 @@ async def get_user(data: UserRequest):
     input_created = await create_topic(input_topic_name)
     output_created = await create_topic(output_topic_name)
     clickhouse_results = create_clickhouse_raw_tables(user["_id"], flow["_id"])
-    print("CLICKHOUSE RESULTS:", clickhouse_results)
+    logger.info("CLICKHOUSE RESULTS: %s", clickhouse_results)
 
     return {
         "mongo_user": user,

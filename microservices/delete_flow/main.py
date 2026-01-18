@@ -7,10 +7,15 @@ from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from confluent_kafka.admin import AdminClient
 import clickhouse_connect
+import logging
+import re
 
 KAFKA_SERVERS = os.environ.get("KAFKA_SERVERS", "localhost:9092")
 
 kafka_client = None
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 async def delete_topic(topic_name: str):
     global kafka_client
@@ -19,12 +24,12 @@ async def delete_topic(topic_name: str):
         for topic, f in fs.items():
             try:
                 f.result()
-                print(f"[Kafka] Topic {topic} usunięty")
+                logger.info(f"[Kafka] Topic %s has been deleted", topic)
             except Exception as e:
-                print(f"[Kafka] Błąd przy usuwaniu topicu {topic}: {e}")
+                logger.error("[Kafka] Error while deleteing %s: %s", topic, e)
         return True
     except Exception as e:
-        print(f"[Kafka] Błąd globalny: {e}")
+        logger.error("Global error: %s", e)
         return False
 
 
@@ -35,6 +40,13 @@ def delete_clickhouse_tables(user_id: str, flow_id: str):
         username=os.getenv("CLICKHOUSE_USER", "default"),
         password=os.getenv("CLICKHOUSE_PASSWORD", "")
     )
+    
+    OBJECT_ID_RE = re.compile(r"^[a-f0-9]{24}$")
+    if not OBJECT_ID_RE.fullmatch(user_id):
+        raise ValueError(f"{user_id} - user_id is invalid")
+
+    if not OBJECT_ID_RE.fullmatch(flow_id):
+        raise ValueError(f"{flow_id} - flow_id is invalid")
 
     db_name = f"ch_{user_id}_db"
     local_table = f"output_{flow_id}_local"
