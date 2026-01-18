@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: flow-operator
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: flow-operator
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: flow-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: flow-operator
+subjects:
+- kind: ServiceAccount
+  name: flow-operator
+  namespace: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flow-operator
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: flow-operator
+  template:
+    metadata:
+      labels:
+        app: flow-operator
+    spec:
+      serviceAccountName: flow-operator  
+      containers:
+      - name: operator
+        image: maks0x073/flow-operator:1 
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flow-operator
+  namespace: default
+spec:
+  type: LoadBalancer
+  selector:
+    app: flow-operator
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: data-processing-secret
+  namespace: sbtg-data
+type: Opaque
+stringData:
+  MONGO_URI: "mongodb://admin:admin@192.168.56.200:27017"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: data-processing-config
+  namespace: sbtg-data
+data:
+  KAFKA_BOOTSTRAP: "kafka1.projekt.home"
+  MONGO_DB: "SBTG_data"
